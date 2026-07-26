@@ -1,6 +1,7 @@
 import Foundation
 import LibP2P
 import NIO
+import NIOPosix
 import SwiftProtobuf
 
 enum DCUtRWire {
@@ -28,6 +29,7 @@ enum DCUtRWire {
 
 enum DCUtRError: Error {
     case messageTooLarge
+    case invalidUDPAddress
 }
 
 final class DCUtRCoordinator: @unchecked Sendable {
@@ -109,6 +111,9 @@ final class DCUtRCoordinator: @unchecked Sendable {
     private func isDialableAddress(_ address: Multiaddr) -> Bool {
         guard !address.isInternalAddress else { return false }
         guard !address.protocols().contains(.p2p_circuit) else { return false }
+        if address.protocols().contains(.udp) {
+            return true
+        }
         return (try? self.application.transports.findBest(forMultiaddr: address)) != nil
     }
 
@@ -134,7 +139,17 @@ final class DCUtRCoordinator: @unchecked Sendable {
         return protocols.contains(.udp) || protocols.contains(.quic)
     }
 
-    private func scheduleSpeculativeQuicDial(
+    private func socketAddress(for address: Multiaddr) -> SocketAddress? {
+        guard let host = address.getFirstAddress(forCodec: .ip4)?.addr ?? address.getFirstAddress(forCodec: .ip6)?.addr else {
+            return nil
+        }
+        guard let portString = address.getFirstAddress(forCodec: .udp)?.addr else { return nil }
+        guard let port = Int(portString) else { return nil }
+        return try? SocketAddress(ipAddress: host, port: port)
+    }
+
+    // Spec step 5: for QUIC-style addresses, the punch is UDP-based and must emit actual datagrams.
+    private func scheduleSpeculativeUdpDial(
         peer: PeerID,
         relayConnection: Connection?,
         address: Multiaddr,
@@ -150,11 +165,42 @@ final class DCUtRCoordinator: @unchecked Sendable {
         self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
             guard self.attempt(for: peer).generation == generation else { return }
             do {
-                // The spec asks for repeated UDP bursts; here the QUIC transport emits the actual packets.
-                try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
-                self.cancelOutstandingConnections(for: peer, relayConnection: relayConnection)
+                guard let remoteAddress = self.socketAddress(for: address) else {
+                    throw DCUtRError.invalidUDPAddress
+                }
+
+                let bindHost: String
+                switch remoteAddress {
+                case .v6:
+                    bindHost = "::"
+                default:
+                    bindHost = "0.0.0.0"
+                }
+                let bootstrap = DatagramBootstrap(group: self.application.eventLoopGroup)
+                    .channelOption(.socketOption(.so_reuseaddr), value: 1)
+
+                let channel = try bootstrap.bind(host: bindHost, port: 0).wait()
+                try channel.connect(to: remoteAddress).wait()
+
+                func sendBurst(remaining: Int) {
+                    guard remaining > 0 else { return }
+                    var buffer = channel.allocator.buffer(capacity: 32)
+                    buffer.writeBytes((0..<32).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
+                    channel.writeAndFlush(buffer, promise: nil)
+                    if remaining == 1 {
+                        onExhausted()
+                        return
+                    }
+                    let nextDelayMs = Int64.random(in: 10...200)
+                    channel.eventLoop.scheduleTask(in: .milliseconds(nextDelayMs)) {
+                        guard self.attempt(for: peer).generation == generation else { return }
+                        sendBurst(remaining: remaining - 1)
+                    }
+                }
+
+                sendBurst(remaining: 12)
             } catch {
-                self.scheduleSpeculativeQuicDial(
+                self.scheduleSpeculativeUdpDial(
                     peer: peer,
                     relayConnection: relayConnection,
                     address: address,
@@ -261,7 +307,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         for address in directAddresses {
             if self.isQuicLikeAddress(address) {
                 let generation = self.attempt(for: peer).generation
-                self.scheduleSpeculativeQuicDial(
+                self.scheduleSpeculativeUdpDial(
                     peer: peer,
                     relayConnection: relayConnection,
                     address: address,
