@@ -402,10 +402,23 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func dialDirect(for peer: PeerID, remoteInfo: PeerInfo) -> Bool {
-        let directAddresses = self.directDialAddresses(for: remoteInfo)
+        let directAddresses = self.orderedDirectDialAddresses(for: remoteInfo)
         guard !directAddresses.isEmpty else { return false }
 
         for address in directAddresses {
+            if self.isQuicLikeAddress(address) {
+                let generation = self.attempt(for: peer).generation
+                self.scheduleSpeculativeUdpDial(
+                    peer: peer,
+                    relayConnection: self.attempt(for: peer).relayConnection,
+                    address: address,
+                    generation: generation,
+                    remainingAttempts: 12,
+                    onExhausted: { self.scheduleRetry(for: peer) }
+                )
+                return true
+            }
+
             do {
                 try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
                 self.cancelOutstandingConnections(for: peer, relayConnection: self.attempt(for: peer).relayConnection)
