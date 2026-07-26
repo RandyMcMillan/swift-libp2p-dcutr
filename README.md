@@ -4,6 +4,10 @@
 
 It follows the DCUtR spec closely: peers exchange `CONNECT` and `SYNC` messages over a relay stream, share observed addresses from identify, then attempt to upgrade to a direct TCP or QUIC-style connection.
 
+- [DCUtR spec](https://github.com/libp2p/specs/blob/master/relay/DCUtR.md)
+- [Peer-to-Peer Communication Across Network Address Translators](https://pdos.csail.mit.edu/papers/p2pnat.pdf)
+- [RFC 5245: Interactive Connectivity Establishment (ICE)](https://datatracker.ietf.org/doc/html/rfc5245)
+
 ## What it does
 
 - Listens for relay-connected peers and starts DCUtR when both sides are identified.
@@ -103,4 +107,3 @@ That preserves coverage for newer APIs and older call sites.
 - DNS-based UDP addresses are resolved for speculative probing.
 - The implementation prefers TCP direct dials before speculative UDP probing when both are available.
 - CONNECT payload ordering is normalized so tests and wire behavior stay deterministic.
-
