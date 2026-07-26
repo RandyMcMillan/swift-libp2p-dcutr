@@ -248,6 +248,27 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testObservedAddressesAreDeterministicallySorted() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+        let coordinator = DCUtRCoordinator(application: app)
+
+        let addresses = [
+            try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+            try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
+            try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+        ]
+
+        XCTAssertEqual(
+            coordinator.observedAddresses(from: addresses),
+            [
+                try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
+            ]
+        )
+
+        try await app.asyncShutdown()
+    }
+
     func testParsePeerInfoRejectsMaliciousAndCircuitAddresses() async throws {
         let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
