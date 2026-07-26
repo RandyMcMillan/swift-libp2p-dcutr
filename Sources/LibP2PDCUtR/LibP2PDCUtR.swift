@@ -187,6 +187,38 @@ final class DCUtRCoordinator: @unchecked Sendable {
         return promise.futureResult
     }
 
+    private func sendUdpBurst(
+        channel: Channel,
+        peer: PeerID,
+        generation: Int,
+        remaining: Int,
+        onExhausted: @escaping @Sendable () -> Void
+    ) {
+        guard remaining > 0 else { return }
+
+        var buffer = channel.allocator.buffer(capacity: 32)
+        buffer.writeBytes((0..<32).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
+        channel.writeAndFlush(buffer, promise: nil)
+
+        if remaining == 1 {
+            onExhausted()
+            channel.close(promise: nil)
+            return
+        }
+
+        let nextDelayMs = Int64.random(in: 10...200)
+        channel.eventLoop.scheduleTask(in: .milliseconds(nextDelayMs)) {
+            guard self.attempt(for: peer).generation == generation else { return }
+            self.sendUdpBurst(
+                channel: channel,
+                peer: peer,
+                generation: generation,
+                remaining: remaining - 1,
+                onExhausted: onExhausted
+            )
+        }
+    }
+
     // Spec step 5: for QUIC-style addresses, the punch is UDP-based and must emit actual datagrams.
     private func scheduleSpeculativeUdpDial(
         peer: PeerID,
@@ -243,24 +275,13 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 }
 
                 setup.whenSuccess { channel in
-                    func sendBurst(remaining: Int) {
-                        guard remaining > 0 else { return }
-                        var buffer = channel.allocator.buffer(capacity: 32)
-                        buffer.writeBytes((0..<32).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
-                        channel.writeAndFlush(buffer, promise: nil)
-                        if remaining == 1 {
-                            onExhausted()
-                            channel.close(promise: nil)
-                            return
-                        }
-                        let nextDelayMs = Int64.random(in: 10...200)
-                        channel.eventLoop.scheduleTask(in: .milliseconds(nextDelayMs)) {
-                            guard self.attempt(for: peer).generation == generation else { return }
-                            sendBurst(remaining: remaining - 1)
-                        }
-                    }
-
-                    sendBurst(remaining: 12)
+                    self.sendUdpBurst(
+                        channel: channel,
+                        peer: peer,
+                        generation: generation,
+                        remaining: 12,
+                        onExhausted: onExhausted
+                    )
                 }
 
                 setup.whenFailure { error in
