@@ -199,6 +199,33 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testLocalObservedAddressesExcludeInternalAddresses() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+        let coordinator = DCUtRCoordinator(application: app)
+
+        app.peerInfo = PeerInfo(
+            peer: app.peerID,
+            addresses: [
+                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
+            ]
+        )
+        app.listenAddresses = [
+            try Multiaddr("/ip4/192.168.1.10/tcp/20000"),
+            try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+        ]
+
+        XCTAssertEqual(
+            Set(coordinator.localObservedAddresses()),
+            Set([
+                try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
+                try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+            ])
+        )
+
+        try await app.asyncShutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
