@@ -324,7 +324,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         self.setAttempt(attempt, for: peer)
     }
 
-    private func localObservedAddresses() -> [Multiaddr] {
+    func localObservedAddresses() -> [Multiaddr] {
         let addresses = self.application.peerInfo.addresses + self.application.listenAddresses
         return Array(Set(addresses.filter { !$0.isInternalAddress && !$0.protocols().contains(.p2p_circuit) }))
     }
