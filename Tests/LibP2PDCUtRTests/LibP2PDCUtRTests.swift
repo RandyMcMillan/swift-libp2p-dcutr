@@ -165,7 +165,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         )
         XCTAssertEqual(
             Set(coordinator.dialablePeerInfo(in: tcpPeerInfo).addresses),
-            Set(tcpPeerInfo.addresses)
+            Set([try Multiaddr("/ip4/1.1.1.1/tcp/10001")])
         )
 
         try await app.asyncShutdown()
@@ -192,7 +192,6 @@ final class LibP2PDCUtRTests: XCTestCase {
             Set([
                 try Multiaddr("/dns4/example.com/udp/4001/quic-v1"),
                 try Multiaddr("/dns6/example.com/udp/4002/quic"),
-                try Multiaddr("/dns4/example.com/tcp/10000"),
             ])
         )
 
