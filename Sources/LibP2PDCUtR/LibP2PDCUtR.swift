@@ -148,7 +148,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
     private func isQuicLikeAddress(_ address: Multiaddr) -> Bool {
         let protocols = address.protocols()
-        return protocols.contains(.udp) || protocols.contains(.quic)
+        return protocols.contains(.udp) || protocols.contains(.quic) || protocols.contains(.quic_v1)
     }
 
     private func socketAddress(for address: Multiaddr) -> SocketAddress? {
