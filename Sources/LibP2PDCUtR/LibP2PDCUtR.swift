@@ -21,10 +21,7 @@ enum DCUtRWire {
         guard buffer.readableBytes <= maxMessageSize else {
             throw DCUtRError.messageTooLarge
         }
-        return try {
-            _ = try HolePunch(serializedBytes: Data(buffer.readableBytesView))
-            return try HolePunch(serializedBytes: Data(buffer.readableBytesView))
-        }()
+        return try HolePunch(serializedBytes: Data(buffer.readableBytesView))
     }
 }
 
@@ -316,15 +313,9 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 }
 
                 let syncPayload = try self.makePayload(type: .sync)
-                guard halfRTT > 0 else {
-                    return .respondThenClose(syncPayload)
-                }
-
-                return try await withCheckedThrowingContinuation { continuation in
-                    req.eventLoop.scheduleTask(in: .milliseconds(Int64(halfRTT * 1000))) {
-                        continuation.resume(returning: .respondThenClose(syncPayload))
-                    }
-                }
+                guard halfRTT > 0 else { return .respondThenClose(syncPayload) }
+                try? await Task.sleep(nanoseconds: UInt64(halfRTT * 1_000_000_000))
+                return .respondThenClose(syncPayload)
 
             case .sync:
                 if !self.dialDirect(for: peer, remoteInfo: remoteInfo) {
