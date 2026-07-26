@@ -342,7 +342,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         for raw in message.obsAddrs {
             do {
                 let ma = try Multiaddr(raw)
-                if ma.protocols().contains(where: { $0 == .p2p_circuit }) { continue }
+                if ma.isInternalAddress || ma.protocols().contains(where: { $0 == .p2p_circuit }) { continue }
                 addrs.append(ma)
             } catch {
                 self.application.logger.warning("Skipping invalid hole punch address: \(error)")
