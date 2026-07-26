@@ -134,6 +134,40 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testDialablePeerInfoSupportsMixedUdpAndTcpPeers() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+        let coordinator = DCUtRCoordinator(application: app)
+
+        let udpPeer = try PeerID()
+        let udpPeerInfo = PeerInfo(
+            peer: udpPeer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/udp/4001/quic"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+            ]
+        )
+
+        let tcpPeer = try PeerID()
+        let tcpPeerInfo = PeerInfo(
+            peer: tcpPeer,
+            addresses: [
+                try Multiaddr("/ip4/1.1.1.1/tcp/10001"),
+                try Multiaddr("/dns4/example.com/tcp/10002"),
+            ]
+        )
+
+        XCTAssertEqual(
+            Set(coordinator.dialablePeerInfo(in: udpPeerInfo).addresses),
+            Set(udpPeerInfo.addresses)
+        )
+        XCTAssertEqual(
+            Set(coordinator.dialablePeerInfo(in: tcpPeerInfo).addresses),
+            Set(tcpPeerInfo.addresses)
+        )
+
+        try await app.asyncShutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
