@@ -115,7 +115,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     private func isDialableAddress(_ address: Multiaddr) -> Bool {
         guard !address.isInternalAddress else { return false }
         guard !address.protocols().contains(.p2p_circuit) else { return false }
-        if address.protocols().contains(.udp) {
+        if self.isQuicLikeAddress(address) {
             return true
         }
         return (try? self.application.transports.findBest(forMultiaddr: address)) != nil
@@ -153,7 +153,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
     private func isQuicLikeAddress(_ address: Multiaddr) -> Bool {
         let protocols = address.protocols()
-        return protocols.contains(.udp) || protocols.contains(.quic) || protocols.contains(.quic_v1)
+        return protocols.contains(.quic) || protocols.contains(.quic_v1)
     }
 
     private func socketAddress(for address: Multiaddr) -> SocketAddress? {
