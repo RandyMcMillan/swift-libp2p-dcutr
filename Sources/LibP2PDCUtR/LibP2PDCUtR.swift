@@ -215,6 +215,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
                     channel.writeAndFlush(buffer, promise: nil)
                     if remaining == 1 {
                         onExhausted()
+                        channel.close(promise: nil)
                         return
                     }
                     let nextDelayMs = Int64.random(in: 10...200)
