@@ -198,8 +198,8 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
-    func testObservedAddressesExcludeInternalAddresses() throws {
-        let app = Application(.testing)
+    func testObservedAddressesExcludeInternalAddresses() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
 
         let addresses = [
@@ -218,7 +218,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             ])
         )
 
-        app.shutdown()
+        try await app.asyncShutdown()
     }
 
     func testParsePeerInfoRejectsMaliciousAndCircuitAddresses() throws {
