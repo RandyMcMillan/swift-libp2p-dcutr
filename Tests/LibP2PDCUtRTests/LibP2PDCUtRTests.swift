@@ -231,6 +231,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             type: .connect,
             obsAddrs: [
                 Data([0xff, 0x00, 0x01]),
+                try Multiaddr("/ip4/192.168.1.1/tcp/10002").binaryPacked(),
                 try Multiaddr("/ip4/8.8.8.8/tcp/10000").binaryPacked(),
                 try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit").binaryPacked(),
             ]
