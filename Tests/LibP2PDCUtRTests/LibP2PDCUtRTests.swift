@@ -113,6 +113,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             peer: peer,
             addresses: [
                 try Multiaddr("/ip4/8.8.8.8/udp/4001/quic"),
+                try Multiaddr("/ip4/8.8.8.8/udp/4002/quic-v1"),
                 try Multiaddr("/ip4/127.0.0.1/udp/4001/quic"),
                 try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
             ]
@@ -127,6 +128,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             Set(dialable.addresses),
             Set([
                 try Multiaddr("/ip4/8.8.8.8/udp/4001/quic"),
+                try Multiaddr("/ip4/8.8.8.8/udp/4002/quic-v1"),
                 try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
             ])
         )
