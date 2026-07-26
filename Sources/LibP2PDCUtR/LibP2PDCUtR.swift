@@ -48,6 +48,11 @@ final class DCUtRCoordinator: @unchecked Sendable {
     private let maxRetries: Int = 3
     private let retryDelay: TimeAmount = .seconds(1)
     private let relayCloseDelay: TimeAmount = .seconds(2)
+    private let handshakeTimeout: TimeAmount = .seconds(3)
+
+    private struct HandshakeTimeoutKey: StorageKey, Sendable {
+        typealias Value = Int
+    }
 
     init(application: Application) {
         self.application = application
@@ -360,6 +365,23 @@ final class DCUtRCoordinator: @unchecked Sendable {
         self.clearAttempt(for: peer)
     }
 
+    func nextHandshakeTimeoutVersion(after current: Int?) -> Int {
+        (current ?? 0) + 1
+    }
+
+    private func armHandshakeTimeout(for req: Request, peer: PeerID) {
+        let version = self.nextHandshakeTimeoutVersion(after: req.storage[HandshakeTimeoutKey.self])
+        req.storage[HandshakeTimeoutKey.self] = version
+        req.eventLoop.scheduleTask(in: self.handshakeTimeout) { [weak req] in
+            guard let req else { return }
+            guard req.channel.isActive else { return }
+            guard req.storage[HandshakeTimeoutKey.self] == version else { return }
+            req.logger.warning("DCUtR: handshake timed out for \(peer.b58String)")
+            self.invalidateAttempt(for: peer)
+            req.shouldClose()
+        }
+    }
+
     private func initiatePunch(for peer: PeerID, relayConnection: Connection) {
         var attempt = self.attempt(for: peer)
         attempt.relayConnection = relayConnection
@@ -507,6 +529,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         guard let peer = req.remotePeer else { return .close }
         switch req.event {
         case .ready:
+            self.armHandshakeTimeout(for: req, peer: peer)
             var attempt = self.attempt(for: peer)
             if req.streamDirection == .outbound, attempt.connectSentAt == nil {
                 // Spec step 2: the dialing side opens the stream and sends CONNECT first.
@@ -521,6 +544,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
             let remoteInfo = try self.parsePeerInfo(from: message, fallbackPeer: peer)
             switch message.type {
             case .connect:
+                self.armHandshakeTimeout(for: req, peer: peer)
                 var attempt = self.attempt(for: peer)
                 attempt.remotePeerInfo = self.mergePeerInfo(attempt.remotePeerInfo, with: remoteInfo)
                 attempt.connectReceivedAt = Date()
