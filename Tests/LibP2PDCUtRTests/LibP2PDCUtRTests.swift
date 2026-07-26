@@ -199,31 +199,27 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
-    func testLocalObservedAddressesExcludeInternalAddresses() async throws {
-        let app = try await Application.make(.testing, peerID: .ephemeral)
+    func testObservedAddressesExcludeInternalAddresses() throws {
+        let app = Application(.testing)
         let coordinator = DCUtRCoordinator(application: app)
 
-        app.peerInfo = PeerInfo(
-            peer: app.peerID,
-            addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
-                try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
-            ]
-        )
-        app.listenAddresses = [
+        let addresses = [
+            try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+            try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
             try Multiaddr("/ip4/192.168.1.10/tcp/20000"),
             try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
+            try Multiaddr("/ip4/127.0.0.1/tcp/30000/p2p-circuit"),
         ]
 
         XCTAssertEqual(
-            Set(coordinator.localObservedAddresses()),
+            Set(coordinator.observedAddresses(from: addresses)),
             Set([
                 try Multiaddr("/ip4/8.8.8.8/tcp/10001"),
                 try Multiaddr("/ip4/1.1.1.1/tcp/20001"),
             ])
         )
 
-        try await app.asyncShutdown()
+        app.shutdown()
     }
 
     @available(*, deprecated, message: "Transition to async tests")
