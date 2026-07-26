@@ -19,6 +19,20 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertEqual(decoded.obsAddrs, original.obsAddrs)
     }
 
+    func testWireRejectsMessagesLargerThanFourKiB() throws {
+        let oversized = HolePunch(
+            type: .connect,
+            obsAddrs: [Data(repeating: 0, count: 4_097)]
+        )
+
+        XCTAssertThrowsError(try DCUtRWire.encode(oversized))
+
+        var buffer = ByteBufferAllocator().buffer(capacity: 4_097)
+        buffer.writeBytes([UInt8](repeating: 0, count: 4_097))
+
+        XCTAssertThrowsError(try DCUtRWire.decode(buffer))
+    }
+
     func testDialablePeerInfoFiltersCircuitAddresses() throws {
         let peer = try PeerID()
         let peerInfo = PeerInfo(
