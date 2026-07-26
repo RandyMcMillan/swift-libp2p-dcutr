@@ -200,14 +200,23 @@ final class DCUtRCoordinator: @unchecked Sendable {
             onExhausted()
             return
         }
-        let delayMs = Int64.random(in: 10...200)
-        self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
-            guard self.attempt(for: peer).generation == generation else { return }
-            let eventLoop = self.application.eventLoopGroup.any()
-            self.resolveSocketAddress(for: address, on: eventLoop).whenComplete { result in
-                switch result {
-                case .failure(let error):
-                    self.application.logger.debug("DCUtR: UDP address resolution failed for \(address): \(error)")
+        let eventLoop = self.application.eventLoopGroup.any()
+        guard self.attempt(for: peer).generation == generation else { return }
+        self.resolveSocketAddress(for: address, on: eventLoop).whenComplete { result in
+            switch result {
+            case .failure(let error):
+                self.application.logger.debug("DCUtR: UDP address resolution failed for \(address): \(error)")
+                self.scheduleSpeculativeUdpDial(
+                    peer: peer,
+                    relayConnection: relayConnection,
+                    address: address,
+                    generation: generation,
+                    remainingAttempts: remainingAttempts - 1,
+                    onExhausted: onExhausted
+                )
+
+            case .success(let remoteAddress):
+                guard let remoteAddress else {
                     self.scheduleSpeculativeUdpDial(
                         peer: peer,
                         relayConnection: relayConnection,
@@ -216,66 +225,54 @@ final class DCUtRCoordinator: @unchecked Sendable {
                         remainingAttempts: remainingAttempts - 1,
                         onExhausted: onExhausted
                     )
+                    return
+                }
 
-                case .success(let remoteAddress):
-                    guard let remoteAddress else {
-                        self.scheduleSpeculativeUdpDial(
-                            peer: peer,
-                            relayConnection: relayConnection,
-                            address: address,
-                            generation: generation,
-                            remainingAttempts: remainingAttempts - 1,
-                            onExhausted: onExhausted
-                        )
-                        return
-                    }
+                let bindHost: String
+                switch remoteAddress {
+                case .v6:
+                    bindHost = "::"
+                default:
+                    bindHost = "0.0.0.0"
+                }
+                let bootstrap = DatagramBootstrap(group: self.application.eventLoopGroup)
+                    .channelOption(.socketOption(.so_reuseaddr), value: 1)
 
-                    let bindHost: String
-                    switch remoteAddress {
-                    case .v6:
-                        bindHost = "::"
-                    default:
-                        bindHost = "0.0.0.0"
-                    }
-                    let bootstrap = DatagramBootstrap(group: self.application.eventLoopGroup)
-                        .channelOption(.socketOption(.so_reuseaddr), value: 1)
+                let setup = bootstrap.bind(host: bindHost, port: 0).flatMap { channel in
+                    channel.connect(to: remoteAddress).map { channel }
+                }
 
-                    let setup = bootstrap.bind(host: bindHost, port: 0).flatMap { channel in
-                        channel.connect(to: remoteAddress).map { channel }
-                    }
-
-                    setup.whenSuccess { channel in
-                        func sendBurst(remaining: Int) {
-                            guard remaining > 0 else { return }
-                            var buffer = channel.allocator.buffer(capacity: 32)
-                            buffer.writeBytes((0..<32).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
-                            channel.writeAndFlush(buffer, promise: nil)
-                            if remaining == 1 {
-                                onExhausted()
-                                channel.close(promise: nil)
-                                return
-                            }
-                            let nextDelayMs = Int64.random(in: 10...200)
-                            channel.eventLoop.scheduleTask(in: .milliseconds(nextDelayMs)) {
-                                guard self.attempt(for: peer).generation == generation else { return }
-                                sendBurst(remaining: remaining - 1)
-                            }
+                setup.whenSuccess { channel in
+                    func sendBurst(remaining: Int) {
+                        guard remaining > 0 else { return }
+                        var buffer = channel.allocator.buffer(capacity: 32)
+                        buffer.writeBytes((0..<32).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
+                        channel.writeAndFlush(buffer, promise: nil)
+                        if remaining == 1 {
+                            onExhausted()
+                            channel.close(promise: nil)
+                            return
                         }
-
-                        sendBurst(remaining: 12)
+                        let nextDelayMs = Int64.random(in: 10...200)
+                        channel.eventLoop.scheduleTask(in: .milliseconds(nextDelayMs)) {
+                            guard self.attempt(for: peer).generation == generation else { return }
+                            sendBurst(remaining: remaining - 1)
+                        }
                     }
 
-                    setup.whenFailure { error in
-                        self.application.logger.debug("DCUtR: UDP probe setup failed for \(address): \(error)")
-                        self.scheduleSpeculativeUdpDial(
-                            peer: peer,
-                            relayConnection: relayConnection,
-                            address: address,
-                            generation: generation,
-                            remainingAttempts: remainingAttempts - 1,
-                            onExhausted: onExhausted
-                        )
-                    }
+                    sendBurst(remaining: 12)
+                }
+
+                setup.whenFailure { error in
+                    self.application.logger.debug("DCUtR: UDP probe setup failed for \(address): \(error)")
+                    self.scheduleSpeculativeUdpDial(
+                        peer: peer,
+                        relayConnection: relayConnection,
+                        address: address,
+                        generation: generation,
+                        remainingAttempts: remainingAttempts - 1,
+                        onExhausted: onExhausted
+                    )
                 }
             }
         }
@@ -546,7 +543,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
                 if req.streamDirection == .inbound {
                     // Spec step 3: the inbound side answers CONNECT with CONNECT.
-                    return .respondThenClose(try self.makePayload(type: .connect))
+                    return .respond(try self.makePayload(type: .connect))
                 }
 
                 let halfRTT: TimeInterval
