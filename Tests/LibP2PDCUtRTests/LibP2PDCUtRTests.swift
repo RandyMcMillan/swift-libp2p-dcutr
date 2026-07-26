@@ -284,6 +284,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             ]
         )
 
+        // Simulates relay-injected garbage and private targets that should never reach the upgrade state.
         let parsed = try coordinator.parsePeerInfo(from: message, fallbackPeer: peer)
 
         XCTAssertEqual(parsed.peer, peer)
