@@ -370,7 +370,9 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     func observedAddresses(from addresses: [Multiaddr]) -> [Multiaddr] {
-        return Array(Set(addresses.filter { !$0.isInternalAddress && !$0.protocols().contains(.p2p_circuit) }))
+        return Array(
+            Set(addresses.filter { !$0.isInternalAddress && !$0.protocols().contains(.p2p_circuit) })
+        ).sorted { $0.description < $1.description }
     }
 
     func localObservedAddresses() -> [Multiaddr] {
@@ -394,7 +396,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
             }
         }
         let peer = fallbackPeer ?? self.application.peerID
-        return PeerInfo(peer: peer, addresses: addrs)
+        return PeerInfo(peer: peer, addresses: addrs.sorted { $0.description < $1.description })
     }
 
     func currentAttemptGeneration(for peer: PeerID) -> Int {
