@@ -221,8 +221,8 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
-    func testParsePeerInfoRejectsMaliciousAndCircuitAddresses() throws {
-        let app = Application(.testing)
+    func testParsePeerInfoRejectsMaliciousAndCircuitAddresses() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
         let peer = try PeerID()
 
@@ -241,7 +241,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertEqual(parsed.peer, peer)
         XCTAssertEqual(parsed.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
 
-        app.shutdown()
+        try await app.asyncShutdown()
     }
 
     func testInvalidatingAttemptMakesOldGenerationStale() async throws {
@@ -258,19 +258,19 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
-    func testHandshakeTimeoutVersionAdvancesMonotonically() throws {
-        let app = Application(.testing)
+    func testHandshakeTimeoutVersionAdvancesMonotonically() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
 
         XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: nil), 1)
         XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: 1), 2)
         XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: 7), 8)
 
-        app.shutdown()
+        try await app.asyncShutdown()
     }
 
-    func testInvalidatingAttemptAdvancesRetryGeneration() throws {
-        let app = Application(.testing)
+    func testInvalidatingAttemptAdvancesRetryGeneration() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
         let peer = try PeerID()
 
@@ -280,7 +280,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertEqual(coordinator.currentAttemptGeneration(for: peer), initial + 1)
         XCTAssertNotEqual(coordinator.currentAttemptGeneration(for: peer), initial)
 
-        app.shutdown()
+        try await app.asyncShutdown()
     }
 
     @available(*, deprecated, message: "Transition to async tests")
