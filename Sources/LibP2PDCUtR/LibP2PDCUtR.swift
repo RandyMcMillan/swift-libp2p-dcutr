@@ -21,7 +21,7 @@ enum DCUtRWire {
         guard buffer.readableBytes <= maxMessageSize else {
             throw DCUtRError.messageTooLarge
         }
-        try HolePunch(serializedBytes: Data(buffer.readableBytesView))
+        return try HolePunch(serializedBytes: Data(buffer.readableBytesView))
     }
 }
 
@@ -313,7 +313,11 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 }
 
                 if halfRTT > 0 {
-                    try await Task.sleep(for: .milliseconds(Int64(halfRTT * 1000)))
+                    if #available(macOS 13.0, *) {
+                        try await Task.sleep(for: .milliseconds(Int64(halfRTT * 1000)))
+                    } else {
+                        // Fallback on earlier versions
+                    }
                 }
 
                 return .respondThenClose(try self.makePayload(type: .sync))
