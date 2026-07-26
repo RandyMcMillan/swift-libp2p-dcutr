@@ -36,6 +36,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         var remotePeerInfo: PeerInfo?
         var connectSentAt: Date?
         var connectReceivedAt: Date?
+        var generation: Int = 0
         var retryCount: Int = 0
         var retryScheduled: Bool = false
     }
@@ -80,7 +81,19 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func clearAttempt(for peer: PeerID) {
-        _ = self.queue.sync { self.attempts.removeValue(forKey: peer.b58String) }
+        self.queue.sync {
+            let current = self.attempts[peer.b58String] ?? Attempt()
+            self.attempts[peer.b58String] = Attempt(generation: current.generation + 1)
+        }
+    }
+
+    private func resetHandshake(for peer: PeerID) {
+        var attempt = self.attempt(for: peer)
+        attempt.connectSentAt = nil
+        attempt.connectReceivedAt = nil
+        attempt.retryScheduled = false
+        attempt.generation += 1
+        self.setAttempt(attempt, for: peer)
     }
 
     private func mergePeerInfo(_ lhs: PeerInfo?, with rhs: PeerInfo) -> PeerInfo {
@@ -113,6 +126,43 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 return address
             }
             return (try? address.encapsulate(proto: .p2p, address: peerInfo.peer.b58String)) ?? address
+        }
+    }
+
+    private func isQuicLikeAddress(_ address: Multiaddr) -> Bool {
+        let protocols = address.protocols()
+        return protocols.contains(.udp) || protocols.contains(.quic)
+    }
+
+    private func scheduleSpeculativeQuicDial(
+        peer: PeerID,
+        relayConnection: Connection?,
+        address: Multiaddr,
+        generation: Int,
+        remainingAttempts: Int,
+        onExhausted: @escaping @Sendable () -> Void
+    ) {
+        guard remainingAttempts > 0 else {
+            onExhausted()
+            return
+        }
+        let delayMs = Int64.random(in: 10...200)
+        self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
+            guard self.attempt(for: peer).generation == generation else { return }
+            do {
+                // The spec asks for repeated UDP bursts; here the QUIC transport emits the actual packets.
+                try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
+                self.cancelOutstandingConnections(for: peer, relayConnection: relayConnection)
+            } catch {
+                self.scheduleSpeculativeQuicDial(
+                    peer: peer,
+                    relayConnection: relayConnection,
+                    address: address,
+                    generation: generation,
+                    remainingAttempts: remainingAttempts - 1,
+                    onExhausted: onExhausted
+                )
+            }
         }
     }
 
@@ -165,7 +215,8 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func localObservedAddresses() -> [Multiaddr] {
-        self.application.peerInfo.addresses.filter { !($0.protocols().contains(.p2p_circuit)) }
+        let addresses = self.application.peerInfo.addresses + self.application.listenAddresses
+        return Array(Set(addresses.filter { !($0.protocols().contains(.p2p_circuit)) }))
     }
 
     private func makePayload(type: HolePunch.Kind) throws -> ByteBuffer {
@@ -208,11 +259,23 @@ final class DCUtRCoordinator: @unchecked Sendable {
         guard !directAddresses.isEmpty else { return false }
 
         for address in directAddresses {
+            if self.isQuicLikeAddress(address) {
+                let generation = self.attempt(for: peer).generation
+                self.scheduleSpeculativeQuicDial(
+                    peer: peer,
+                    relayConnection: relayConnection,
+                    address: address,
+                    generation: generation,
+                    remainingAttempts: 12,
+                    onExhausted: { self.initiatePunch(for: peer, relayConnection: relayConnection) }
+                )
+                return true
+            }
+
             do {
                 // Spec step 6: if a direct connection wins, keep the relay alive briefly and then close it.
                 try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
-                self.scheduleRelayClose(for: peer, relayConnection: relayConnection)
-                self.clearAttempt(for: peer)
+                self.cancelOutstandingConnections(for: peer, relayConnection: relayConnection)
                 return true
             } catch {
                 self.application.logger.debug("DCUtR: direct upgrade dial failed for \(address): \(error)")
@@ -220,6 +283,20 @@ final class DCUtRCoordinator: @unchecked Sendable {
         }
 
         return false
+    }
+
+    private func cancelOutstandingConnections(for peer: PeerID, relayConnection: Connection?) {
+        let loop = self.application.eventLoopGroup.any()
+        self.application.connections.getConnectionsToPeer(peer: peer, on: loop).whenSuccess { connections in
+            for connection in connections {
+                guard connection.remoteAddr?.protocols().contains(.p2p_circuit) == true else { continue }
+                connection.close().whenComplete { _ in }
+            }
+        }
+        if let relayConnection {
+            self.scheduleRelayClose(for: peer, relayConnection: relayConnection)
+        }
+        self.clearAttempt(for: peer)
     }
 
     private func scheduleRelayClose(for peer: PeerID, relayConnection: Connection) {
@@ -234,9 +311,14 @@ final class DCUtRCoordinator: @unchecked Sendable {
         guard attempt.retryCount < (self.maxRetries - 1), attempt.retryScheduled == false else { return }
         attempt.retryCount += 1
         attempt.retryScheduled = true
+        attempt.connectSentAt = nil
+        attempt.connectReceivedAt = nil
+        attempt.generation += 1
+        let generation = attempt.generation
         self.setAttempt(attempt, for: peer)
 
         self.application.eventLoopGroup.any().scheduleTask(in: self.retryDelay) {
+            guard self.attempt(for: peer).generation == generation else { return }
             var attempt = self.attempt(for: peer)
             attempt.retryScheduled = false
             self.setAttempt(attempt, for: peer)
@@ -251,10 +333,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         for address in directAddresses {
             do {
                 try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
-                if let relayConnection = self.attempt(for: peer).relayConnection {
-                    self.scheduleRelayClose(for: peer, relayConnection: relayConnection)
-                }
-                self.clearAttempt(for: peer)
+                self.cancelOutstandingConnections(for: peer, relayConnection: self.attempt(for: peer).relayConnection)
                 return true
             } catch {
                 self.application.logger.debug("DCUtR: direct dial failed for \(address): \(error)")
