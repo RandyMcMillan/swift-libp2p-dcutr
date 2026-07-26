@@ -29,7 +29,6 @@ enum DCUtRWire {
 
 enum DCUtRError: Error {
     case messageTooLarge
-    case invalidUDPAddress
 }
 
 final class DCUtRCoordinator: @unchecked Sendable {
@@ -164,24 +163,33 @@ final class DCUtRCoordinator: @unchecked Sendable {
         let delayMs = Int64.random(in: 10...200)
         self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
             guard self.attempt(for: peer).generation == generation else { return }
-            do {
-                guard let remoteAddress = self.socketAddress(for: address) else {
-                    throw DCUtRError.invalidUDPAddress
-                }
+            guard let remoteAddress = self.socketAddress(for: address) else {
+                self.scheduleSpeculativeUdpDial(
+                    peer: peer,
+                    relayConnection: relayConnection,
+                    address: address,
+                    generation: generation,
+                    remainingAttempts: remainingAttempts - 1,
+                    onExhausted: onExhausted
+                )
+                return
+            }
 
-                let bindHost: String
-                switch remoteAddress {
-                case .v6:
-                    bindHost = "::"
-                default:
-                    bindHost = "0.0.0.0"
-                }
-                let bootstrap = DatagramBootstrap(group: self.application.eventLoopGroup)
-                    .channelOption(.socketOption(.so_reuseaddr), value: 1)
+            let bindHost: String
+            switch remoteAddress {
+            case .v6:
+                bindHost = "::"
+            default:
+                bindHost = "0.0.0.0"
+            }
+            let bootstrap = DatagramBootstrap(group: self.application.eventLoopGroup)
+                .channelOption(.socketOption(.so_reuseaddr), value: 1)
 
-                let channel = try bootstrap.bind(host: bindHost, port: 0).wait()
-                try channel.connect(to: remoteAddress).wait()
+            let setup = bootstrap.bind(host: bindHost, port: 0).flatMap { channel in
+                channel.connect(to: remoteAddress).map { channel }
+            }
 
+            setup.whenSuccess { channel in
                 func sendBurst(remaining: Int) {
                     guard remaining > 0 else { return }
                     var buffer = channel.allocator.buffer(capacity: 32)
@@ -199,7 +207,10 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 }
 
                 sendBurst(remaining: 12)
-            } catch {
+            }
+
+            setup.whenFailure { error in
+                self.application.logger.debug("DCUtR: UDP probe setup failed for \(address): \(error)")
                 self.scheduleSpeculativeUdpDial(
                     peer: peer,
                     relayConnection: relayConnection,
