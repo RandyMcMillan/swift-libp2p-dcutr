@@ -29,6 +29,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/randymcmillan/swift-libp2p.git", branch: "gnostr"),
+        .package(url: "https://github.com/apple/swift-nio.git", .upToNextMajor(from: "2.97.1")),
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.29.0")),
     ],
     targets: [
@@ -36,6 +37,7 @@ let package = Package(
             name: "LibP2PDCUtR",
             dependencies: [
                 .product(name: "LibP2P", package: "swift-libp2p"),
+                .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             resources: [
@@ -47,6 +49,7 @@ let package = Package(
             dependencies: [
                 .target(name: "LibP2PDCUtR"),
                 .product(name: "LibP2P", package: "swift-libp2p"),
+                .product(name: "NIOPosix", package: "swift-nio"),
             ]
         ),
     ]
