@@ -222,6 +222,42 @@ final class LibP2PDCUtRTests: XCTestCase {
         app.shutdown()
     }
 
+    func testParsePeerInfoRejectsMaliciousAndCircuitAddresses() throws {
+        let app = Application(.testing)
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let message = HolePunch(
+            type: .connect,
+            obsAddrs: [
+                Data([0xff, 0x00, 0x01]),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000").binaryPacked(),
+                try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit").binaryPacked(),
+            ]
+        )
+
+        let parsed = try coordinator.parsePeerInfo(from: message, fallbackPeer: peer)
+
+        XCTAssertEqual(parsed.peer, peer)
+        XCTAssertEqual(parsed.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
+
+        app.shutdown()
+    }
+
+    func testInvalidatingAttemptMakesOldGenerationStale() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let initial = coordinator.currentAttemptGeneration(for: peer)
+        coordinator.invalidateAttempt(for: peer)
+
+        XCTAssertEqual(coordinator.currentAttemptGeneration(for: peer), initial + 1)
+        XCTAssertFalse(coordinator.currentAttemptGeneration(for: peer) == initial)
+
+        try await app.asyncShutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
