@@ -107,3 +107,7 @@ That preserves coverage for newer APIs and older call sites.
 - DNS-based UDP addresses are resolved for speculative probing.
 - The implementation prefers TCP direct dials before speculative UDP probing when both are available.
 - CONNECT payload ordering is normalized so tests and wire behavior stay deterministic.
+
+## Attribution
+
+Attack-mitigation strategies in this implementation were informed by notes from [@RandyMcMillan](https://github.com/RandyMcMillan) on low-and-slow abuse, relay-injected targets, and retry hardening.
