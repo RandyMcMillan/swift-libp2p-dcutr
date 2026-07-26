@@ -133,18 +133,36 @@ final class DCUtRCoordinator: @unchecked Sendable {
         }
     }
 
+    private func orderedDirectDialAddresses(for peerInfo: PeerInfo) -> [Multiaddr] {
+        self.directDialAddresses(for: peerInfo).sorted { lhs, rhs in
+            switch (self.isQuicLikeAddress(lhs), self.isQuicLikeAddress(rhs)) {
+            case (false, true):
+                return true
+            case (true, false):
+                return false
+            default:
+                return lhs.description < rhs.description
+            }
+        }
+    }
+
     private func isQuicLikeAddress(_ address: Multiaddr) -> Bool {
         let protocols = address.protocols()
         return protocols.contains(.udp) || protocols.contains(.quic)
     }
 
     private func socketAddress(for address: Multiaddr) -> SocketAddress? {
-        guard let host = address.getFirstAddress(forCodec: .ip4)?.addr ?? address.getFirstAddress(forCodec: .ip6)?.addr else {
+        let host = address.getFirstAddress(forCodec: .ip4)?.addr
+            ?? address.getFirstAddress(forCodec: .ip6)?.addr
+            ?? address.getFirstAddress(forCodec: .dns4)?.addr
+            ?? address.getFirstAddress(forCodec: .dns6)?.addr
+            ?? address.getFirstAddress(forCodec: .dnsaddr)?.addr
+        guard let host else {
             return nil
         }
         guard let portString = address.getFirstAddress(forCodec: .udp)?.addr else { return nil }
         guard let port = Int(portString) else { return nil }
-        return try? SocketAddress(ipAddress: host, port: port)
+        return try? SocketAddress.makeAddressResolvingHost(host, port: port)
     }
 
     // Spec step 5: for QUIC-style addresses, the punch is UDP-based and must emit actual datagrams.
@@ -253,7 +271,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
             guard let relayConnection else { return }
             // Spec step 1: if we already know a direct address, try the unilateral upgrade first.
-            let directAddresses = self.directDialAddresses(for: peerInfo)
+            let directAddresses = self.orderedDirectDialAddresses(for: peerInfo)
             if !directAddresses.isEmpty {
                 if self.attemptDirectUpgrade(for: peer, relayConnection: relayConnection, remoteInfo: peerInfo) {
                     return
@@ -312,7 +330,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func attemptDirectUpgrade(for peer: PeerID, relayConnection: Connection, remoteInfo: PeerInfo) -> Bool {
-        let directAddresses = self.directDialAddresses(for: remoteInfo)
+        let directAddresses = self.orderedDirectDialAddresses(for: remoteInfo)
         guard !directAddresses.isEmpty else { return false }
 
         for address in directAddresses {
