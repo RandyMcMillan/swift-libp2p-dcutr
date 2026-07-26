@@ -449,7 +449,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
                     address: address,
                     generation: generation,
                     remainingAttempts: 12,
-                    onExhausted: { self.scheduleRetry(for: peer) }
+                    onExhausted: { self.initiatePunch(for: peer, relayConnection: self.attempt(for: peer).relayConnection ?? Connection()) }
                 )
                 return true
             }
