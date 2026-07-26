@@ -211,6 +211,7 @@ final class LibP2PDCUtRTests: XCTestCase {
 
         let app = try await Application.make(.testing, peerID: .ephemeral)
 
+        // Only QUIC-style UDP addrs should make it into DCUtR probing.
         let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
 
         XCTAssertEqual(
