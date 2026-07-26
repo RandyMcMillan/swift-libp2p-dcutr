@@ -19,12 +19,54 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertEqual(decoded.obsAddrs, original.obsAddrs)
     }
 
-    func testDialablePeerInfoFiltersCircuitAddresses() throws {
+    func testWireRejectsMessagesLargerThanFourKiB() throws {
+        let oversized = HolePunch(
+            type: .connect,
+            obsAddrs: [Data(repeating: 0, count: 4_097)]
+        )
+
+        XCTAssertThrowsError(try DCUtRWire.encode(oversized))
+
+        var buffer = ByteBufferAllocator().buffer(capacity: 4_097)
+        buffer.writeBytes([UInt8](repeating: 0, count: 4_097))
+
+        XCTAssertThrowsError(try DCUtRWire.decode(buffer))
+    }
+
+    func testDeterministicPeerIDFromFixedMultihash() throws {
+        let peer = try PeerID(fromHexID: "12200200bdb9f19d496460e6578874d5b34f614c52722b7af5bfc7d7d84396c48804")
+
+        XCTAssertEqual(peer.b58String, "QmNUUBR4QUMRRjqkSVnh7L3TxKT5K2NZmNCv6JoZrv7hsq")
+    }
+
+    func testDialablePeerInfoFiltersCircuitAddresses() async throws {
         let peer = try PeerID()
         let peerInfo = PeerInfo(
             peer: peer,
             addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+                try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
+                try Multiaddr("/dns4/example.com/tcp/10002"),
+            ]
+        )
+
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+
+        let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
+
+        XCTAssertEqual(dialable.peer, peer)
+        XCTAssertEqual(dialable.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
+
+        try await app.asyncShutdown()
+    }
+
+    @available(*, deprecated, message: "Transition to async tests")
+    func testDialablePeerInfoFiltersCircuitAddresses_Deprecated() throws {
+        let peer = try PeerID()
+        let peerInfo = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
                 try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
                 try Multiaddr("/dns4/example.com/tcp/10002"),
             ]
@@ -36,10 +78,37 @@ final class LibP2PDCUtRTests: XCTestCase {
         let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
 
         XCTAssertEqual(dialable.peer, peer)
-        XCTAssertEqual(dialable.addresses, [try Multiaddr("/ip4/127.0.0.1/tcp/10000")])
+        XCTAssertEqual(dialable.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
     }
 
-    func testHasRelayReservationRequiresCircuitAddress() throws {
+    func testHasRelayReservationRequiresCircuitAddress() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let noRelay = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+            ]
+        )
+        XCTAssertFalse(coordinator.hasRelayReservation(in: noRelay))
+
+        let withRelay = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+                try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
+            ]
+        )
+        XCTAssertTrue(coordinator.hasRelayReservation(in: withRelay))
+
+        try await app.asyncShutdown()
+    }
+
+    @available(*, deprecated, message: "Transition to async tests")
+    func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
         defer { app.shutdown() }
 
@@ -49,7 +118,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         let noRelay = PeerInfo(
             peer: peer,
             addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
             ]
         )
         XCTAssertFalse(coordinator.hasRelayReservation(in: noRelay))
@@ -57,7 +126,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         let withRelay = PeerInfo(
             peer: peer,
             addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
                 try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
             ]
         )
