@@ -219,6 +219,27 @@ final class DCUtRCoordinator: @unchecked Sendable {
         }
     }
 
+    private func scheduleSpeculativeUdpRetry(
+        peer: PeerID,
+        relayConnection: Connection?,
+        address: Multiaddr,
+        generation: Int,
+        remainingAttempts: Int,
+        onExhausted: @escaping @Sendable () -> Void
+    ) {
+        let delayMs = Int64.random(in: 10...200)
+        self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
+            self.scheduleSpeculativeUdpDial(
+                peer: peer,
+                relayConnection: relayConnection,
+                address: address,
+                generation: generation,
+                remainingAttempts: remainingAttempts,
+                onExhausted: onExhausted
+            )
+        }
+    }
+
     // Spec step 5: for QUIC-style addresses, the punch is UDP-based and must emit actual datagrams.
     private func scheduleSpeculativeUdpDial(
         peer: PeerID,
@@ -238,7 +259,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
             switch result {
             case .failure(let error):
                 self.application.logger.debug("DCUtR: UDP address resolution failed for \(address): \(error)")
-                self.scheduleSpeculativeUdpDial(
+                self.scheduleSpeculativeUdpRetry(
                     peer: peer,
                     relayConnection: relayConnection,
                     address: address,
@@ -249,7 +270,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
             case .success(let remoteAddress):
                 guard let remoteAddress else {
-                    self.scheduleSpeculativeUdpDial(
+                    self.scheduleSpeculativeUdpRetry(
                         peer: peer,
                         relayConnection: relayConnection,
                         address: address,
@@ -286,7 +307,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
                 setup.whenFailure { error in
                     self.application.logger.debug("DCUtR: UDP probe setup failed for \(address): \(error)")
-                    self.scheduleSpeculativeUdpDial(
+                    self.scheduleSpeculativeUdpRetry(
                         peer: peer,
                         relayConnection: relayConnection,
                         address: address,
