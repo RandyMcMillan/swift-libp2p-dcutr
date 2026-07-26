@@ -326,7 +326,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
     private func localObservedAddresses() -> [Multiaddr] {
         let addresses = self.application.peerInfo.addresses + self.application.listenAddresses
-        return Array(Set(addresses.filter { !($0.protocols().contains(.p2p_circuit)) }))
+        return Array(Set(addresses.filter { !$0.isInternalAddress && !$0.protocols().contains(.p2p_circuit) }))
     }
 
     private func makePayload(type: HolePunch.Kind) throws -> ByteBuffer {
@@ -529,8 +529,12 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
                 let syncPayload = try self.makePayload(type: .sync)
                 // Spec step 4: wait for half the relay RTT, then send SYNC to trigger simultaneous open.
-                guard halfRTT > 0 else { return .respondThenClose(syncPayload) }
+                guard halfRTT > 0 else {
+                    _ = self.dialDirect(for: peer, remoteInfo: remoteInfo)
+                    return .respondThenClose(syncPayload)
+                }
                 try? await Task.sleep(nanoseconds: UInt64(halfRTT * 1_000_000_000))
+                _ = self.dialDirect(for: peer, remoteInfo: remoteInfo)
                 return .respondThenClose(syncPayload)
 
             case .sync:
