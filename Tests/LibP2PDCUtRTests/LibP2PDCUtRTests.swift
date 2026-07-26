@@ -259,6 +259,17 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testHandshakeTimeoutVersionAdvancesMonotonically() throws {
+        let app = Application(.testing)
+        let coordinator = DCUtRCoordinator(application: app)
+
+        XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: nil), 1)
+        XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: 1), 2)
+        XCTAssertEqual(coordinator.nextHandshakeTimeoutVersion(after: 7), 8)
+
+        app.shutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
