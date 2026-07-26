@@ -54,6 +54,27 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    @available(*, deprecated, message: "Transition to async tests")
+    func testDialablePeerInfoFiltersCircuitAddresses_Deprecated() throws {
+        let peer = try PeerID()
+        let peerInfo = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+                try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
+                try Multiaddr("/dns4/example.com/tcp/10002"),
+            ]
+        )
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+
+        let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
+
+        XCTAssertEqual(dialable.peer, peer)
+        XCTAssertEqual(dialable.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
+    }
+
     func testHasRelayReservationRequiresCircuitAddress() async throws {
         let app = try await Application.make(.testing, peerID: .ephemeral)
 
@@ -78,5 +99,31 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertTrue(coordinator.hasRelayReservation(in: withRelay))
 
         try await app.asyncShutdown()
+    }
+
+    @available(*, deprecated, message: "Transition to async tests")
+    func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
+        let app = Application(.testing)
+        defer { app.shutdown() }
+
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let noRelay = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+            ]
+        )
+        XCTAssertFalse(coordinator.hasRelayReservation(in: noRelay))
+
+        let withRelay = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
+                try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
+            ]
+        )
+        XCTAssertTrue(coordinator.hasRelayReservation(in: withRelay))
     }
 }
