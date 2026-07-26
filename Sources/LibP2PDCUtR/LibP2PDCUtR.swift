@@ -396,7 +396,10 @@ final class DCUtRCoordinator: @unchecked Sendable {
             }
         }
         let peer = fallbackPeer ?? self.application.peerID
-        return PeerInfo(peer: peer, addresses: addrs.sorted { $0.description < $1.description })
+        return PeerInfo(
+            peer: peer,
+            addresses: Array(Set(addrs)).sorted { $0.description < $1.description }
+        )
     }
 
     func currentAttemptGeneration(for peer: PeerID) -> Int {
