@@ -33,7 +33,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertThrowsError(try DCUtRWire.decode(buffer))
     }
 
-    func testDialablePeerInfoFiltersCircuitAddresses() throws {
+    func testDialablePeerInfoFiltersCircuitAddresses() async throws {
         let peer = try PeerID()
         let peerInfo = PeerInfo(
             peer: peer,
@@ -44,18 +44,18 @@ final class LibP2PDCUtRTests: XCTestCase {
             ]
         )
 
-        let app = Application(.testing)
-        defer { app.shutdown() }
+        let app = try await Application.make(.testing, peerID: .ephemeral)
 
         let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
 
         XCTAssertEqual(dialable.peer, peer)
         XCTAssertEqual(dialable.addresses, [try Multiaddr("/ip4/8.8.8.8/tcp/10000")])
+
+        try await app.asyncShutdown()
     }
 
-    func testHasRelayReservationRequiresCircuitAddress() throws {
-        let app = Application(.testing)
-        defer { app.shutdown() }
+    func testHasRelayReservationRequiresCircuitAddress() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
 
         let coordinator = DCUtRCoordinator(application: app)
         let peer = try PeerID()
@@ -63,7 +63,7 @@ final class LibP2PDCUtRTests: XCTestCase {
         let noRelay = PeerInfo(
             peer: peer,
             addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
             ]
         )
         XCTAssertFalse(coordinator.hasRelayReservation(in: noRelay))
@@ -71,10 +71,12 @@ final class LibP2PDCUtRTests: XCTestCase {
         let withRelay = PeerInfo(
             peer: peer,
             addresses: [
-                try Multiaddr("/ip4/127.0.0.1/tcp/10000"),
+                try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
                 try Multiaddr("/ip4/127.0.0.1/tcp/10001/p2p-circuit"),
             ]
         )
         XCTAssertTrue(coordinator.hasRelayReservation(in: withRelay))
+
+        try await app.asyncShutdown()
     }
 }
