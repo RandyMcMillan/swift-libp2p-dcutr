@@ -28,7 +28,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "../swift-libp2p"),
+        .package(url: "https://github.com/randymcmillan/swift-libp2p.git", branch: "gnostr"),
         .package(url: "https://github.com/apple/swift-protobuf.git", .upToNextMajor(from: "1.29.0")),
     ],
     targets: [
