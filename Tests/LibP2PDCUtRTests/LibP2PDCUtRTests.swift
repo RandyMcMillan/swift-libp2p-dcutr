@@ -269,6 +269,20 @@ final class LibP2PDCUtRTests: XCTestCase {
         app.shutdown()
     }
 
+    func testInvalidatingAttemptAdvancesRetryGeneration() throws {
+        let app = Application(.testing)
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let initial = coordinator.currentAttemptGeneration(for: peer)
+        coordinator.invalidateAttempt(for: peer)
+
+        XCTAssertEqual(coordinator.currentAttemptGeneration(for: peer), initial + 1)
+        XCTAssertNotEqual(coordinator.currentAttemptGeneration(for: peer), initial)
+
+        app.shutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
