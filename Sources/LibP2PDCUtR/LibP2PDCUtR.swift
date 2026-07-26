@@ -5,6 +5,7 @@ import SwiftProtobuf
 
 enum DCUtRWire {
     static let protocolID = "/libp2p/dcutr/1.0.0"
+    // The spec requires varint-framed protobuf RPCs and recommends refusing messages > 4 KiB.
     static let maxMessageSize = 4 * 1024
 
     static func encode(_ message: HolePunch) throws -> ByteBuffer {
@@ -51,6 +52,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     func install() {
+        // Hook the relay, identify, and dcutr stream handlers so the upgrade flow can follow the spec.
         self.application.events.on(self, event: .connected(self.onConnected(_:)))
         self.application.events.on(self, event: .disconnected(self.onDisconnected(_:_:)))
         self.application.events.on(self, event: .identifiedPeer(self.onIdentifiedPeer(_:)))
@@ -143,12 +145,14 @@ final class DCUtRCoordinator: @unchecked Sendable {
             }
 
             guard let relayConnection else { return }
+            // Spec step 1: if we already know a direct address, try the unilateral upgrade first.
             let directAddresses = self.directDialAddresses(for: peerInfo)
             if !directAddresses.isEmpty {
                 if self.attemptDirectUpgrade(for: peer, relayConnection: relayConnection, remoteInfo: peerInfo) {
                     return
                 }
             }
+            // Otherwise fall back to the relay-mediated CONNECT/SYNC exchange.
             self.initiatePunch(for: peer, relayConnection: relayConnection)
         }
     }
@@ -205,6 +209,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
 
         for address in directAddresses {
             do {
+                // Spec step 6: if a direct connection wins, keep the relay alive briefly and then close it.
                 try self.application.newStream(to: address, forProtocol: DCUtRWire.protocolID)
                 self.scheduleRelayClose(for: peer, relayConnection: relayConnection)
                 self.clearAttempt(for: peer)
@@ -285,6 +290,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         case .ready:
             var attempt = self.attempt(for: peer)
             if req.streamDirection == .outbound, attempt.connectSentAt == nil {
+                // Spec step 2: the dialing side opens the stream and sends CONNECT first.
                 attempt.connectSentAt = Date()
                 self.setAttempt(attempt, for: peer)
                 return .respond(try self.makePayload(type: .connect))
@@ -302,6 +308,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 self.setAttempt(attempt, for: peer)
 
                 if req.streamDirection == .inbound {
+                    // Spec step 3: the inbound side answers CONNECT with CONNECT.
                     return .respondThenClose(try self.makePayload(type: .connect))
                 }
 
@@ -313,11 +320,13 @@ final class DCUtRCoordinator: @unchecked Sendable {
                 }
 
                 let syncPayload = try self.makePayload(type: .sync)
+                // Spec step 4: wait for half the relay RTT, then send SYNC to trigger simultaneous open.
                 guard halfRTT > 0 else { return .respondThenClose(syncPayload) }
                 try? await Task.sleep(nanoseconds: UInt64(halfRTT * 1_000_000_000))
                 return .respondThenClose(syncPayload)
 
             case .sync:
+                // Spec step 5/6: SYNC authorizes the direct dial and migration off the relay.
                 if !self.dialDirect(for: peer, remoteInfo: remoteInfo) {
                     self.scheduleRetry(for: peer)
                 }
