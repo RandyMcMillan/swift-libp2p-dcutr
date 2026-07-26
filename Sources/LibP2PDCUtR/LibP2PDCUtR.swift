@@ -115,7 +115,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     private func isDialableAddress(_ address: Multiaddr) -> Bool {
         guard !address.isInternalAddress else { return false }
         guard !address.protocols().contains(.p2p_circuit) else { return false }
-        // DCUtR only special-cases UDP when the multiaddr explicitly advertises QUIC.
+        // Mitigates blind UDP spraying: only QUIC-style UDP addrs are eligible for DCUtR probing.
         if self.isQuicLikeAddress(address) {
             return true
         }
@@ -228,6 +228,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         remainingAttempts: Int,
         onExhausted: @escaping @Sendable () -> Void
     ) {
+        // Back off on resolution/setup failure so bad UDP targets cannot spin the event loop.
         let delayMs = Int64.random(in: 10...200)
         self.application.eventLoopGroup.any().scheduleTask(in: .milliseconds(delayMs)) {
             self.scheduleSpeculativeUdpDial(
@@ -389,6 +390,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         for raw in message.obsAddrs {
             do {
                 let ma = try Multiaddr(raw)
+                // Reject relay-circuit and private/internal addrs so the peer cannot smuggle targets.
                 if ma.isInternalAddress || ma.protocols().contains(where: { $0 == .p2p_circuit }) { continue }
                 addrs.append(ma)
             } catch {
@@ -398,6 +400,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         let peer = fallbackPeer ?? self.application.peerID
         return PeerInfo(
             peer: peer,
+            // Normalize the candidate list so repeated addresses do not inflate upgrade state.
             addresses: Array(Set(addrs)).sorted { $0.description < $1.description }
         )
     }
@@ -415,7 +418,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func armHandshakeTimeout(for req: Request, peer: PeerID) {
-        // Low-and-slow handshakes are treated as failed attempts once the timer expires.
+        // Slowloris-style stalled handshakes consume a retry slot once this timer fires.
         let version = self.nextHandshakeTimeoutVersion(after: req.storage[HandshakeTimeoutKey.self])
         req.storage[HandshakeTimeoutKey.self] = version
         req.eventLoop.scheduleTask(in: self.handshakeTimeout) { [weak req] in
