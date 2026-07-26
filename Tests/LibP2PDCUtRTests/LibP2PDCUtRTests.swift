@@ -33,6 +33,12 @@ final class LibP2PDCUtRTests: XCTestCase {
         XCTAssertThrowsError(try DCUtRWire.decode(buffer))
     }
 
+    func testDeterministicPeerIDFromFixedMultihash() throws {
+        let peer = try PeerID(fromHexID: "12200200bdb9f19d496460e6578874d5b34f614c52722b7af5bfc7d7d84396c48804")
+
+        XCTAssertEqual(peer.b58String, "QmNUUBR4QUMRRjqkSVnh7L3TxKT5K2NZmNCv6JoZrv7hsq")
+    }
+
     func testDialablePeerInfoFiltersCircuitAddresses() async throws {
         let peer = try PeerID()
         let peerInfo = PeerInfo(
