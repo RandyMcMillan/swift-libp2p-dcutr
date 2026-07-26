@@ -324,9 +324,12 @@ final class DCUtRCoordinator: @unchecked Sendable {
         self.setAttempt(attempt, for: peer)
     }
 
-    func localObservedAddresses() -> [Multiaddr] {
-        let addresses = self.application.peerInfo.addresses + self.application.listenAddresses
+    func observedAddresses(from addresses: [Multiaddr]) -> [Multiaddr] {
         return Array(Set(addresses.filter { !$0.isInternalAddress && !$0.protocols().contains(.p2p_circuit) }))
+    }
+
+    func localObservedAddresses() -> [Multiaddr] {
+        self.observedAddresses(from: self.application.peerInfo.addresses + self.application.listenAddresses)
     }
 
     private func makePayload(type: HolePunch.Kind) throws -> ByteBuffer {
