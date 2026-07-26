@@ -416,7 +416,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
             guard req.channel.isActive else { return }
             guard req.storage[HandshakeTimeoutKey.self] == version else { return }
             req.logger.warning("DCUtR: handshake timed out for \(peer.b58String)")
-            self.invalidateAttempt(for: peer)
+            self.scheduleRetry(for: peer)
             req.shouldClose()
         }
     }
