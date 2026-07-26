@@ -337,7 +337,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
         return try DCUtRWire.encode(message)
     }
 
-    private func parsePeerInfo(from message: HolePunch, fallbackPeer: PeerID?) throws -> PeerInfo {
+    func parsePeerInfo(from message: HolePunch, fallbackPeer: PeerID?) throws -> PeerInfo {
         var addrs: [Multiaddr] = []
         for raw in message.obsAddrs {
             do {
@@ -350,6 +350,14 @@ final class DCUtRCoordinator: @unchecked Sendable {
         }
         let peer = fallbackPeer ?? self.application.peerID
         return PeerInfo(peer: peer, addresses: addrs)
+    }
+
+    func currentAttemptGeneration(for peer: PeerID) -> Int {
+        self.attempt(for: peer).generation
+    }
+
+    func invalidateAttempt(for peer: PeerID) {
+        self.clearAttempt(for: peer)
     }
 
     private func initiatePunch(for peer: PeerID, relayConnection: Connection) {
