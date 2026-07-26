@@ -171,6 +171,34 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testDialablePeerInfoKeepsDnsUdpAddresses() async throws {
+        let peer = try PeerID()
+        let peerInfo = PeerInfo(
+            peer: peer,
+            addresses: [
+                try Multiaddr("/dns4/example.com/udp/4001/quic-v1"),
+                try Multiaddr("/dns6/example.com/udp/4002/quic"),
+                try Multiaddr("/dns4/example.com/tcp/10000"),
+            ]
+        )
+
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+
+        let dialable = DCUtRCoordinator(application: app).dialablePeerInfo(in: peerInfo)
+
+        XCTAssertEqual(dialable.peer, peer)
+        XCTAssertEqual(
+            Set(dialable.addresses),
+            Set([
+                try Multiaddr("/dns4/example.com/udp/4001/quic-v1"),
+                try Multiaddr("/dns6/example.com/udp/4002/quic"),
+                try Multiaddr("/dns4/example.com/tcp/10000"),
+            ])
+        )
+
+        try await app.asyncShutdown()
+    }
+
     @available(*, deprecated, message: "Transition to async tests")
     func testHasRelayReservationRequiresCircuitAddress_Deprecated() throws {
         let app = Application(.testing)
