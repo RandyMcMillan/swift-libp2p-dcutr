@@ -145,6 +145,7 @@ final class LibP2PDCUtRTests: XCTestCase {
             peer: udpPeer,
             addresses: [
                 try Multiaddr("/ip4/8.8.8.8/udp/4001/quic"),
+                try Multiaddr("/ip4/8.8.8.8/udp/4002/quic-v1"),
                 try Multiaddr("/ip4/8.8.8.8/tcp/10000"),
             ]
         )
