@@ -410,7 +410,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
                     address: address,
                     generation: generation,
                     remainingAttempts: 12,
-                    onExhausted: { self.initiatePunch(for: peer, relayConnection: relayConnection) }
+                    onExhausted: { self.scheduleRetry(for: peer) }
                 )
                 return true
             }
@@ -482,13 +482,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
                     address: address,
                     generation: generation,
                     remainingAttempts: 12,
-                    onExhausted: {
-                        if let relayConnection = self.attempt(for: peer).relayConnection {
-                            self.initiatePunch(for: peer, relayConnection: relayConnection)
-                        } else {
-                            self.scheduleRetry(for: peer)
-                        }
-                    }
+                    onExhausted: { self.scheduleRetry(for: peer) }
                 )
                 return true
             }
