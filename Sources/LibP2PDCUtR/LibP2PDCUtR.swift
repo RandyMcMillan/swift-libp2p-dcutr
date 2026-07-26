@@ -115,6 +115,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     private func isDialableAddress(_ address: Multiaddr) -> Bool {
         guard !address.isInternalAddress else { return false }
         guard !address.protocols().contains(.p2p_circuit) else { return false }
+        // DCUtR only special-cases UDP when the multiaddr explicitly advertises QUIC.
         if self.isQuicLikeAddress(address) {
             return true
         }
@@ -409,6 +410,7 @@ final class DCUtRCoordinator: @unchecked Sendable {
     }
 
     private func armHandshakeTimeout(for req: Request, peer: PeerID) {
+        // Low-and-slow handshakes are treated as failed attempts once the timer expires.
         let version = self.nextHandshakeTimeoutVersion(after: req.storage[HandshakeTimeoutKey.self])
         req.storage[HandshakeTimeoutKey.self] = version
         req.eventLoop.scheduleTask(in: self.handshakeTimeout) { [weak req] in
