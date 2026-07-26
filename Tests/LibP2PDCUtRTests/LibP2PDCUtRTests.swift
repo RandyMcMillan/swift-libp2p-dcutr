@@ -292,6 +292,27 @@ final class LibP2PDCUtRTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testParsePeerInfoDeduplicatesAddresses() async throws {
+        let app = try await Application.make(.testing, peerID: .ephemeral)
+        let coordinator = DCUtRCoordinator(application: app)
+        let peer = try PeerID()
+
+        let addr = try Multiaddr("/ip4/8.8.8.8/tcp/10000")
+        let message = HolePunch(
+            type: .connect,
+            obsAddrs: [
+                try addr.binaryPacked(),
+                try addr.binaryPacked(),
+            ]
+        )
+
+        let parsed = try coordinator.parsePeerInfo(from: message, fallbackPeer: peer)
+
+        XCTAssertEqual(parsed.addresses, [addr])
+
+        try await app.asyncShutdown()
+    }
+
     func testInvalidatingAttemptMakesOldGenerationStale() async throws {
         let app = try await Application.make(.testing, peerID: .ephemeral)
         let coordinator = DCUtRCoordinator(application: app)
